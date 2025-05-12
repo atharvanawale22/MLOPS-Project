@@ -1,76 +1,90 @@
-""# MLOps Project: House Price Prediction
+# Advanced House Price Prediction Model with MLOps
 
-# Objective: Predict house prices using historical data and deploy the model with MLOps practices.
-
-# Step 1: Data Management
+# ===============================
+#          Import Libraries
+# ===============================
 
 import pandas as pd
 import numpy as np
 import os
-import sklearn
-from sklearn.model_selection import train_test_split
+import json
+import joblib
+import seaborn as sns
+import matplotlib.pyplot as plt
+from flask import Flask, request, jsonify, render_template_string
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from flasgger import Swagger
+import shap
+
+# ===============================
+#        Data Management
+# ===============================
 
 # Load Dataset
-
 data = pd.read_csv('house_prices.csv')
 data.ffill(inplace=True)
 
-# Basic Preprocessing
+# Feature Engineering
+data['age'] = 2025 - data['yr_built']  # Corrected column name
+data['is_renovated'] = data['yr_renovated'].apply(lambda x: 1 if x > 0 else 0)
+data['price_per_sqft'] = data['price'] / data['sqft_living']
 
-# Only keeping required features
-X = data[['bedrooms', 'bathrooms', 'sqft_living']]
+# Selecting features and target
+X = data[['bedrooms', 'bathrooms', 'sqft_living', 'floors', 'condition', 'age', 'is_renovated']]
 y = data['price']
 
 # Train-Test Split
-
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-print('Data loaded and preprocessed successfully.')
+# Feature Scaling
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
 
-
-# Step 2: Model Development
-
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error
+# ===============================
+#        Model Development
+# ===============================
 
 # Model Initialization
+models = {
+    "RandomForest": RandomForestRegressor(n_estimators=100, random_state=42),
+    "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=42)
+}
 
-model = RandomForestRegressor(n_estimators=100, random_state=42)
+# Model Training and Evaluation
+model_scores = {}
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    model_scores[name] = {
+        "MSE": mean_squared_error(y_test, y_pred),
+        "MAE": mean_absolute_error(y_test, y_pred),
+        "R2_Score": r2_score(y_test, y_pred)
+    }
 
-# Training
-
-model.fit(X_train, y_train)
-
-# Predictions
-
-y_pred = model.predict(X_test)
-
-# Evaluation
-
-mse = mean_squared_error(y_test, y_pred)
-print(f'Model Trained. MSE: {mse}')
-
-
-# Step 3: Model Versioning and Packaging
-
-import joblib
-from flask import Flask, request, jsonify
+# Select the best model
+best_model_name = min(model_scores, key=lambda x: model_scores[x]["MSE"])
+best_model = models[best_model_name]
 
 # Save the model
-
 os.makedirs('models', exist_ok=True)
-joblib.dump(model, 'models/house_price_model.pkl')
-print('Model saved successfully.')
+joblib.dump(best_model, 'models/house_price_model.pkl')
+print(f"Model '{best_model_name}' saved successfully.")
 
-# Flask App for serving predictions
+# ===============================
+#        API Development
+# ===============================
 
 app = Flask(__name__)
+Swagger(app)
 
 # Home Route
-
 @app.route('/', methods=['GET'])
 def home():
-    return '''
+    return render_template_string('''
     <!DOCTYPE html>
     <html>
     <head>
@@ -95,28 +109,31 @@ def home():
             h2 {
                 color: #2c3e50;
                 text-align: center;
+                margin-bottom: 10px;
             }
-            ul {
-                list-style: none;
-                padding-left: 0;
+            .subtitle {
                 text-align: center;
-            }
-            ul li {
-                margin: 10px 0;
                 font-size: 1.1em;
+                margin-bottom: 25px;
+                color: #555;
             }
             form {
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
+                gap: 15px;
                 margin-top: 20px;
             }
-            textarea {
+            label {
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            input[type="number"] {
                 padding: 10px;
                 font-size: 1em;
                 border-radius: 8px;
                 border: 1px solid #ccc;
-                resize: none;
+                width: 100%;
+                box-sizing: border-box;
             }
             input[type="submit"] {
                 background-color: #4CAF50;
@@ -127,54 +144,126 @@ def home():
                 border-radius: 8px;
                 cursor: pointer;
                 transition: background-color 0.3s;
+                margin-top: 20px;
             }
             input[type="submit"]:hover {
                 background-color: #45a049;
-            }
-            .footer {
-                text-align: center;
-                margin-top: 30px;
-                font-size: 0.9em;
-                color: #555;
             }
         </style>
     </head>
     <body>
         <div class="container">
             <h2>🏡 House Price Prediction API</h2>
-            <p style="text-align:center;">Use the endpoints below to test the model:</p>
-            <ul>
-                <li><strong>GET /</strong> → Home Page</li>
-                <li><strong>POST /predict</strong> → Predict price (send JSON)</li>
-            </ul>
-
-            <h3 style="text-align:center;">Try a Prediction:</h3>
-            <form action="/predict" method="post" enctype="application/json">
-                <label for="features"><strong>Enter Features (JSON format):</strong></label>
-                <textarea id="features" name="features" rows="10" cols="50">
-{"bedrooms": 3, "bathrooms": 2, "sqft_living": 1800}
-                </textarea>
-                <input type="submit" value="Predict Price">
+            <div class="subtitle">💚 Predict your dream home's worth in seconds!</div>
+            <form action="/predict" method="post">
+                <div>
+                    <label for="bedrooms">🛏 Bedrooms</label>
+                    <input type="number" name="bedrooms" min="0" required>
+                </div>
+                <div>
+                    <label for="bathrooms">🛁 Bathrooms</label>
+                    <input type="number" step="0.5" name="bathrooms" min="0" required>
+                </div>
+                <div>
+                    <label for="sqft_living">📐 Sqft Living</label>
+                    <input type="number" name="sqft_living" min="0" required>
+                </div>
+                <div>
+                    <label for="floors">🏢 Floors</label>
+                    <input type="number" name="floors" min="1" required>
+                </div>
+                <div>
+                    <label for="condition">🔍 Condition (1 to 5)</label>
+                    <input type="number" name="condition" min="1" max="5" required>
+                </div>
+                <div>
+                    <label for="age">📅 Age of House</label>
+                    <input type="number" name="age" min="0" required>
+                </div>
+                <div>
+                    <label for="is_renovated">🔧 Renovated? (0 = No, 1 = Yes)</label>
+                    <input type="number" name="is_renovated" min="0" max="1" required>
+                </div>
+                <input type="submit" value="Predict Price 💰">
             </form>
-            <div class="footer">
-                <p>Created with ❤️ using Flask & Docker</p>
-            </div>
         </div>
     </body>
     </html>
-    '''
+    ''')
 
+
+# Single Prediction
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        data = request.form['features']
-        features = pd.read_json(data, typ='series').to_frame().T
-        model = joblib.load('models/house_price_model.pkl')
-        prediction = model.predict(features)
-        return jsonify({'Prediction': prediction[0]})
-    except Exception as e:
-        return jsonify({'error': str(e)})
+        input_dict = {
+    "bedrooms": int(request.form['bedrooms']),
+    "bathrooms": float(request.form['bathrooms']),
+    "sqft_living": int(request.form['sqft_living']),
+    "floors": int(request.form['floors']),
+    "condition": int(request.form['condition']),
+    "age": int(request.form['age']),
+    "is_renovated": int(request.form['is_renovated'])
+}
+        features = pd.DataFrame([input_dict])
+        prediction = model.predict(features)[0]
 
+        html_template = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Prediction Result</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background: #f2f2f2;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                }
+                .result-box {
+                    background-color: #fff;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                    text-align: center;
+                }
+                .result-box h1 {
+                    color: #333;
+                }
+                .result-box p {
+                    font-size: 24px;
+                    color: #4CAF50;
+                    margin-top: 20px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="result-box">
+                <h1>Predicted Price</h1>
+                <p>${{ prediction }}</p>
+                <br><a href="/">Try another</a>
+            </div>
+        </body>
+        </html>
+        """
+        return render_template_string(html_template, prediction=round(prediction, 2))
+
+    except Exception as e:
+        return f"<h2 style='color:red'>Something went wrong: {e}</h2><br><a href='/'>Back</a>"
+
+# Batch Prediction
+@app.route('/batch_predict', methods=['POST'])
+def batch_predict():
+    data = request.json
+    df = pd.DataFrame(data)
+    df = scaler.transform(df)
+    predictions = best_model.predict(df)
+    return jsonify({"Predictions": [round(pred, 2) for pred in predictions]})
+
+# ===============================
+#        Run Application
+# ===============================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-""
