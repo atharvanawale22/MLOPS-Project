@@ -1,175 +1,200 @@
-# 🏡 Advanced House Price Prediction Model with MLOps
+# House Price Prediction Model
 
-## 📂 Project Overview
+This project is a **House Price Prediction Model** powered by **Machine Learning** and integrated with **MLOps components** like Docker, Prometheus, and Grafana for monitoring and container orchestration.
 
-This project is a Flask-based web application that predicts house prices using machine learning. It offers:
+## 📌 **Project Overview**
 
-* A web-based frontend for user input
-* REST API endpoints for prediction
-* A trained ML model using scikit-learn
-* A containerized deployment via Docker
+The model predicts house prices based on various features like the number of bedrooms, bathrooms, square footage, floors, and more. It is built using Flask as a web application, Docker for containerization, Prometheus for monitoring, and Grafana for visualizing metrics.
 
+---
 
-## 📚 Project Structure
+## 🛠 **Technology Stack**
 
-```
-.
-├── app.py                 # Main Flask application
-├── house_prices.csv       # Dataset used for training
-├── models/
-│   └── house_price_model.pkl  # Saved trained model
-├── requirements.txt       # Python dependencies
-├── Dockerfile             # Docker container instructions
-```
+* **Flask** - Web application framework
+* **Pandas & NumPy** - Data manipulation and calculations
+* **Scikit-Learn** - Machine Learning models
+* **Docker** - Containerization
+* **Prometheus** - Metrics collection and monitoring
+* **Grafana** - Metrics visualization
 
-## 📁 Code Explanation (app.py)
+---
 
-### ✉️ Imports
+## ⚙️ **MLOps Components**
 
-```python
-import pandas as pd, numpy as np, os, json, joblib
-import seaborn as sns, matplotlib.pyplot as plt
-from flask import Flask, request, jsonify, render_template_string
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.preprocessing import StandardScaler
-from flasgger import Swagger
-import shap
-```
+### Docker
 
-These libraries handle data processing, ML modeling, visualization, API development, and documentation.
+Docker is used to containerize the application, ensuring it runs consistently across different environments.
 
-### 📅 Data Management
+### Prometheus
 
-```python
-data = pd.read_csv('house_prices.csv')
-data.ffill(inplace=True)
-```
+Prometheus is set up to scrape metrics from the Flask application. Metrics collected include:
 
-Loads the dataset and fills missing values using forward fill.
+* **prediction\_count**: Number of predictions made
+* **prediction\_latency\_seconds**: Latency for predictions in seconds
 
-#### 💡 Feature Engineering
+### Grafana
 
-```python
-data['age'] = 2025 - data['yr_built']
-data['is_renovated'] = data['yr_renovated'].apply(lambda x: 1 if x > 0 else 0)
-data['price_per_sqft'] = data['price'] / data['sqft_living']
-```
+Grafana is configured to visualize metrics collected by Prometheus, allowing real-time monitoring of the model's performance.
 
-Adds new features: age of the house, renovation status, and price per square foot.
+---
 
-#### ⚖️ Feature & Target Selection
+## 🚀 **Setup Instructions**
 
-```python
-X = data[['bedrooms', 'bathrooms', 'sqft_living', 'floors', 'condition', 'age', 'is_renovated']]
-y = data['price']
-```
+1. Clone the repository:
 
-### 🔎 Data Splitting & Scaling
+   ```bash
+   git clone <repository-url>
+   cd House-Price-Prediction
+   ```
 
-```python
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
-```
+2. Build and run the Docker containers:
 
-Splits data and normalizes features.
+   ```bash
+   docker-compose up --build
+   ```
 
-### 💡 Model Training
+3. Access the following services:
 
-```python
-models = {
-  "RandomForest": RandomForestRegressor(...),
-  "GradientBoosting": GradientBoostingRegressor(...)
-}
-```
+   * Flask App: [http://localhost:5000](http://localhost:5000)
+   * Prometheus: [http://localhost:9090](http://localhost:9090)
+   * Grafana: [http://localhost:3000](http://localhost:3000)
 
-Trains two models and compares them using MSE, MAE, and R2.
+4. Grafana default credentials:
 
-```python
-best_model_name = min(model_scores, key=lambda x: model_scores[x]["MSE"])
-best_model = models[best_model_name]
-```
+   * **Username**: admin
+   * **Password**: admin
 
-Selects the best performing model and saves it with joblib.
+---
 
+## 🏷️ **Docker Compose Configuration**
 
-## 🚀 API Development
+Services configured in `docker-compose.yml`:
 
-### Flask App Initialization
+* **flask-app**: Hosts the ML model
+* **prometheus**: Scrapes metrics from the Flask app
+* **grafana**: Visualizes Prometheus metrics
 
-```python
-app = Flask(__name__)
-Swagger(app)
-```
+---
 
-Creates a Flask app and initializes Swagger for API docs.
+## 🔍 **Code Explanation**
 
-### 🏛 Home Route
+### app.py
 
-Displays a styled HTML form to accept user input:
+The main application is built using Flask, with the following components:
 
-* Emojis + Form fields for bedrooms, bathrooms, sqft, etc.
-* Responsive design using CSS
+1. **Data Loading and Feature Engineering**
 
-### 🔢 /predict Route
+   * Data is loaded from `house_prices.csv`.
+   * Feature engineering adds new columns like `age`, `is_renovated`, and `price_per_sqft`.
 
-Processes form submission, converts input into a DataFrame, predicts using the model, and returns the predicted price in a styled result page.
+2. **Model Training**
 
-### 🤜 /batch\_predict Route
+   * Two models are trained: `RandomForestRegressor` and `GradientBoostingRegressor`.
+   * The best model is selected based on the lowest Mean Squared Error (MSE) and saved for predictions.
 
-Takes JSON list of records, predicts for all, and returns a list of prices.
+3. **Flask API Setup**
 
+   * `/` → Renders the main prediction form.
+   * `/predict` → Accepts a JSON payload and returns a price prediction.
+   * `/batch_predict` → Accepts multiple JSON objects for batch predictions.
 
-## 🚧 Dockerfile Explanation
+4. **Prometheus Metrics**
 
-```Dockerfile
-# Use Python base image
-FROM python:3.10-slim
+   * Integrated with Prometheus to monitor:
 
-# Set working directory
-WORKDIR /app
+     * `prediction_count`: Tracks the number of predictions.
+     * `prediction_latency_seconds`: Measures latency for each prediction.
 
-# Copy all files
-COPY . /app
+5. **Middleware Mounting**
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+   * The Flask app exposes `/metrics` for Prometheus to scrape data every 15 seconds.
 
-# Expose app port
-EXPOSE 5000
+---
 
-# Run the Flask app
-CMD ["python", "app.py"]
-```
+### docker-compose.yaml
 
-This Dockerfile sets up a lightweight container with Python 3.10, installs the required packages, exposes port 5000, and launches the Flask app.
+Defines three services:
 
+* **flask-app** → Runs the Flask server.
+* **prometheus** → Scrapes metrics from the Flask app.
+* **grafana** → Visualizes the metrics collected by Prometheus.
 
-## 🚜 Running the App in Docker
+---
 
-1. **Build the image**:
+### prometheus.yml
 
-```bash
-docker build -t house-price-app .
-```
+Prometheus is configured to scrape data from the Flask app running at `flask-app:5000`. The scrape interval is set to **15 seconds**.
 
-2. **Run the container**:
+---
 
-```bash
-docker run -p 5000:5000 house-price-app
-```
+## 📊 **Prometheus Monitoring**
 
-## 🚀 Future Enhancements
+Prometheus is configured to scrape metrics from the Flask app every **15 seconds** as specified in `prometheus.yml`. It tracks prediction count and latency metrics which can be queried and visualized in Grafana.
 
-* Add SHAP visualizations to explain predictions
-* Integrate CI/CD pipeline
-* Deploy to cloud (AWS/GCP/Azure)
-* Add database for storing predictions
+---
 
+## 🌐 **Endpoints**
 
-## 🧱 Team Notes
+1. **Home Page**: `/`
 
-This documentation explains every major section of the code and container setup. Feel free to update the feature engineering logic or model evaluation metrics as needed. For deployment, ensure the Docker image is pushed to a registry if used in a production pipeline.
+   * Displays the form for house price prediction.
+
+2. **Prediction**: `/predict`
+
+   * Accepts JSON payload for prediction.
+
+   * Example:
+
+     ```json
+     {
+       "bedrooms": 3,
+       "bathrooms": 2,
+       "sqft_living": 1500,
+       "floors": 1,
+       "condition": 4,
+       "age": 10,
+       "is_renovated": 0
+     }
+     ```
+
+   * Response:
+
+     ```json
+     {
+       "Predicted Price": 450000.0
+     }
+     ```
+
+3. **Batch Prediction**: `/batch_predict`
+
+   * Accepts a list of JSON payloads for multiple predictions.
+   * Response:
+
+     ```json
+     {
+       "Predictions": [450000.0, 350000.0, 420000.0]
+     }
+     ```
+
+4. **Metrics**: `/metrics`
+
+   * Exposes Prometheus metrics for monitoring.
+
+---
+
+## 📌 **Future Enhancements**
+
+* Add more ML models for comparison
+* Enable batch processing of predictions
+* Deploy on cloud platforms (AWS/GCP)
+* Extend monitoring to include memory and CPU usage
+
+---
+
+Feel free to contribute to the project or suggest improvements! 😊
+
+---
+
+## 📬 **Contact**
+
+For any issues, feel free to reach out to the project maintainer.
