@@ -1,9 +1,11 @@
 flask
-flasgger
-scikit-learn
 pandas
 numpy
 joblib
-matplotlib
 seaborn
+matplotlib
+scikit-learn
+flasgger
 shap
+prometheus_client
+gunicorn
