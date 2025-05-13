@@ -1,34 +1,38 @@
-# Advanced House Price Prediction Model with MLOps
+# ===============================
+#      House Price Prediction
+# ===============================
+# 🚀 MLOps Integrated with Docker, Prometheus, and Grafana
 
 # ===============================
 #          Import Libraries
 # ===============================
-
 import pandas as pd
 import numpy as np
 import os
-import json
 import joblib
-import seaborn as sns
-import matplotlib.pyplot as plt
 from flask import Flask, request, jsonify, render_template_string
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.preprocessing import StandardScaler
-from flasgger import Swagger
-import shap
+from prometheus_client import Counter, Histogram, make_wsgi_app
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
+# ===============================
+#        Prometheus Metrics
+# ===============================
+prediction_count = Counter('prediction_count', 'Number of Predictions Made')
+prediction_latency = Histogram('prediction_latency_seconds', 'Latency for predictions in seconds')
 
 # ===============================
 #        Data Management
 # ===============================
-
 # Load Dataset
 data = pd.read_csv('house_prices.csv')
 data.ffill(inplace=True)
 
 # Feature Engineering
-data['age'] = 2025 - data['yr_built']  # Corrected column name
+data['age'] = 2025 - data['yr_built']
 data['is_renovated'] = data['yr_renovated'].apply(lambda x: 1 if x > 0 else 0)
 data['price_per_sqft'] = data['price'] / data['sqft_living']
 
@@ -47,14 +51,11 @@ X_test = scaler.transform(X_test)
 # ===============================
 #        Model Development
 # ===============================
-
-# Model Initialization
 models = {
     "RandomForest": RandomForestRegressor(n_estimators=100, random_state=42),
     "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=42)
 }
 
-# Model Training and Evaluation
 model_scores = {}
 for name, model in models.items():
     model.fit(X_train, y_train)
@@ -65,205 +66,127 @@ for name, model in models.items():
         "R2_Score": r2_score(y_test, y_pred)
     }
 
-# Select the best model
 best_model_name = min(model_scores, key=lambda x: model_scores[x]["MSE"])
 best_model = models[best_model_name]
 
-# Save the model
+# Save model
 os.makedirs('models', exist_ok=True)
 joblib.dump(best_model, 'models/house_price_model.pkl')
-print(f"Model '{best_model_name}' saved successfully.")
 
 # ===============================
-#        API Development
+#        Flask API Setup
 # ===============================
-
 app = Flask(__name__)
-Swagger(app)
 
-# Home Route
 @app.route('/', methods=['GET'])
 def home():
     return render_template_string('''
     <!DOCTYPE html>
     <html>
     <head>
-        <title>House Price Prediction App</title>
+        <title>House Price Prediction</title>
         <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500&display=swap" rel="stylesheet">
         <style>
-            body {
-                font-family: 'Montserrat', sans-serif;
-                background: linear-gradient(135deg, #74ebd5, #9face6);
-                margin: 0;
-                padding: 0;
-                color: #333;
-            }
-            .container {
-                max-width: 800px;
-                margin: 60px auto;
-                background: white;
-                border-radius: 15px;
-                box-shadow: 0 0 20px rgba(0,0,0,0.2);
-                padding: 40px;
-            }
-            h2 {
-                color: #2c3e50;
-                text-align: center;
-                margin-bottom: 10px;
-            }
-            .subtitle {
-                text-align: center;
-                font-size: 1.1em;
-                margin-bottom: 25px;
-                color: #555;
-            }
-            form {
-                display: flex;
-                flex-direction: column;
-                gap: 15px;
-                margin-top: 20px;
-            }
-            label {
-                font-weight: bold;
-                margin-bottom: 5px;
-            }
-            input[type="number"] {
-                padding: 10px;
-                font-size: 1em;
-                border-radius: 8px;
-                border: 1px solid #ccc;
-                width: 100%;
-                box-sizing: border-box;
-            }
-            input[type="submit"] {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 12px;
-                font-size: 1em;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: background-color 0.3s;
-                margin-top: 20px;
-            }
-            input[type="submit"]:hover {
-                background-color: #45a049;
-            }
+            body { font-family: 'Montserrat', sans-serif; background: linear-gradient(135deg, #74ebd5, #9face6); margin: 0; padding: 0; color: #333; }
+            .container { max-width: 800px; margin: 60px auto; background: white; border-radius: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.2); padding: 40px; }
+            h2 { color: #2c3e50; text-align: center; margin-bottom: 10px; }
+            .subtitle { text-align: center; font-size: 1.1em; margin-bottom: 25px; color: #555; }
+            form { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+            label { font-weight: bold; margin-bottom: 5px; }
+            input[type="number"] { padding: 10px; font-size: 1em; border-radius: 8px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+            input[type="submit"] { background-color: #4CAF50; color: white; border: none; padding: 12px; font-size: 1em; border-radius: 8px; cursor: pointer; transition: background-color 0.3s; margin-top: 20px; }
+            input[type="submit"]:hover { background-color: #45a049; }
+            #result { margin-top: 20px; font-size: 1.3em; text-align: center; color: #2c3e50; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>🏡 House Price Prediction API</h2>
+            <h2>🏡 House Price Prediction</h2>
             <div class="subtitle">💚 Predict your dream home's worth in seconds!</div>
-            <form action="/predict" method="post">
-                <div>
-                    <label for="bedrooms">🛏 Bedrooms</label>
-                    <input type="number" name="bedrooms" min="0" required>
-                </div>
-                <div>
-                    <label for="bathrooms">🛁 Bathrooms</label>
-                    <input type="number" step="0.5" name="bathrooms" min="0" required>
-                </div>
-                <div>
-                    <label for="sqft_living">📐 Sqft Living</label>
-                    <input type="number" name="sqft_living" min="0" required>
-                </div>
-                <div>
-                    <label for="floors">🏢 Floors</label>
-                    <input type="number" name="floors" min="1" required>
-                </div>
-                <div>
-                    <label for="condition">🔍 Condition (1 to 5)</label>
-                    <input type="number" name="condition" min="1" max="5" required>
-                </div>
-                <div>
-                    <label for="age">📅 Age of House</label>
-                    <input type="number" name="age" min="0" required>
-                </div>
-                <div>
-                    <label for="is_renovated">🔧 Renovated? (0 = No, 1 = Yes)</label>
-                    <input type="number" name="is_renovated" min="0" max="1" required>
-                </div>
+            <form id="predictionForm">
+                <label>🛏 Bedrooms</label>
+                <input type="number" id="bedrooms" required min="0">
+                <label>🛁 Bathrooms</label>
+                <input type="number" id="bathrooms" step="0.5" required min="0">
+                <label>📐 Sqft Living</label>
+                <input type="number" id="sqft_living" required min="0">
+                <label>🏢 Floors</label>
+                <input type="number" id="floors" required min="1">
+                <label>🔍 Condition (1-5)</label>
+                <input type="number" id="condition" required min="1" max="5">
+                <label>📅 Age of House</label>
+                <input type="number" id="age" required min="0">
+                <label>🔧 Renovated? (0 = No, 1 = Yes)</label>
+                <input type="number" id="is_renovated" required min="0" max="1">
                 <input type="submit" value="Predict Price 💰">
             </form>
+            <div id="result"></div>
         </div>
+        <script>
+            document.getElementById("predictionForm").addEventListener("submit", async function(event) {
+                event.preventDefault();
+                const data = {
+                    bedrooms: parseInt(document.getElementById("bedrooms").value),
+                    bathrooms: parseFloat(document.getElementById("bathrooms").value),
+                    sqft_living: parseInt(document.getElementById("sqft_living").value),
+                    floors: parseInt(document.getElementById("floors").value),
+                    condition: parseInt(document.getElementById("condition").value),
+                    age: parseInt(document.getElementById("age").value),
+                    is_renovated: parseInt(document.getElementById("is_renovated").value)
+                };
+                const response = await fetch("/predict", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                const resultDiv = document.getElementById("result");
+                if (response.ok) {
+                    resultDiv.innerHTML = `<strong>Predicted Price: $${result["Predicted Price"]}</strong>`;
+                } else {
+                    resultDiv.innerHTML = `<span style="color:red;">Error: ${result.error}</span>`;
+                }
+            });
+        </script>
     </body>
     </html>
     ''')
 
-
-# Single Prediction
 @app.route('/predict', methods=['POST'])
+@prediction_latency.time()
 def predict():
+    prediction_count.inc()
     try:
-        input_dict = {
-    "bedrooms": int(request.form['bedrooms']),
-    "bathrooms": float(request.form['bathrooms']),
-    "sqft_living": int(request.form['sqft_living']),
-    "floors": int(request.form['floors']),
-    "condition": int(request.form['condition']),
-    "age": int(request.form['age']),
-    "is_renovated": int(request.form['is_renovated'])
-}
-        features = pd.DataFrame([input_dict])
-        prediction = model.predict(features)[0]
-
-        html_template = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Prediction Result</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    background: #f2f2f2;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                }
-                .result-box {
-                    background-color: #fff;
-                    padding: 40px;
-                    border-radius: 12px;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                    text-align: center;
-                }
-                .result-box h1 {
-                    color: #333;
-                }
-                .result-box p {
-                    font-size: 24px;
-                    color: #4CAF50;
-                    margin-top: 20px;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="result-box">
-                <h1>Predicted Price</h1>
-                <p>${{ prediction }}</p>
-                <br><a href="/">Try another</a>
-            </div>
-        </body>
-        </html>
-        """
-        return render_template_string(html_template, prediction=round(prediction, 2))
-
+        data = request.json
+        features = pd.DataFrame([data])
+        features = scaler.transform(features)
+        prediction = best_model.predict(features)[0]
+        return jsonify({"Predicted Price": round(prediction, 2)})
     except Exception as e:
-        return f"<h2 style='color:red'>Something went wrong: {e}</h2><br><a href='/'>Back</a>"
+        return jsonify({"error": str(e)}), 400
 
-# Batch Prediction
 @app.route('/batch_predict', methods=['POST'])
+@prediction_latency.time()
 def batch_predict():
-    data = request.json
-    df = pd.DataFrame(data)
-    df = scaler.transform(df)
-    predictions = best_model.predict(df)
-    return jsonify({"Predictions": [round(pred, 2) for pred in predictions]})
+    prediction_count.inc()
+    try:
+        data = request.json
+        df = pd.DataFrame(data)
+        df = scaler.transform(df)
+        predictions = best_model.predict(df)
+        return jsonify({"Predictions": [round(pred, 2) for pred in predictions]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 # ===============================
-#        Run Application
+#    Prometheus Middleware Mount
+# ===============================
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {
+    '/metrics': make_wsgi_app()
+})
+
+# ===============================
+#        Run Flask Server
 # ===============================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
